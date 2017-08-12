@@ -213,8 +213,8 @@ func debugCmd(cmd *cobra.Command) {
 	if debug {
 		log.SetLevel(log.DebugLevel)
 		title := fmt.Sprintf("Command %q called with flags:", cmd.Name())
-		fmt.Println(title)
-		fmt.Println(strings.Repeat("=", len(title)))
+		log.Info(title)
+		log.Info(strings.Repeat("=", len(title)))
 		cmd.DebugFlags()
 	}
 }
