@@ -17,9 +17,11 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/jaytaylor/html2text"
 
 	"github.com/sendgrid/sendgrid-go"
 	"github.com/sendgrid/sendgrid-go/helpers/mail"
@@ -29,6 +31,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Creates email address structure form the given value in differnt formats:
+// "Full Name <name@domain.name>" OR "name@domain.name"
 func createAddress(raw string) *mail.Email {
 	if raw == "" {
 		log.Fatal("Missing email adderess.")
@@ -46,15 +50,54 @@ func createAddress(raw string) *mail.Email {
 	return mail.NewEmail(parts[0], parts[1])
 }
 
+// Search in the arguments for HTML body and plain-text body.
+func messageBodies(args []string) (htmlBody, plainBody string) {
+	if len(args) == 0 {
+		log.Fatal(`Missing message body.
+
+Need to have at least one specified either with --html and/or --plain options
+or postional parameters.`)
+	}
+	for i, b := range args {
+		// body contains HTML tags:
+		matched, err := regexp.MatchString("\\<[\\w]{1,}[^>]*\\>", b)
+		if matched {
+			htmlBody = b
+			if len(args) == 1 {
+				plainBody, err = html2text.FromString(b, html2text.Options{PrettyTables: true})
+				if err != nil {
+					log.Error("Failed to convert HTML body into plain-text:", err)
+				}
+				return
+			}
+			if i == 0 && args[1] != "" {
+				plainBody = args[1]
+			} else if i == 1 && args[0] != "" {
+				plainBody = args[0]
+			} else {
+			}
+			return
+		}
+	}
+	if args[0] == "" {
+		log.Fatal("Missing message body.")
+	}
+	return "", args[0]
+}
+
 // Command execution
 func send(cmd *cobra.Command, args []string) {
 	debugCmd(cmd)
-	fmt.Println("*** send called with:", len(args))
+
+	if len(args) > 2 {
+		log.Fatalf("Too many positional argumets: %v", args)
+	}
 
 	from := createAddress(flagString(cmd, "from"))
 	subject := flagString(cmd, "subject")
 	if subject == "" {
-		log.Fatal("The subject is required. You can get around this requirement if you use a template with a subject defined or if every personalization has a subject defined.")
+		log.Fatal(`The subject is required. You can get around this requirement if you use a template with a subject defined or 
+if every personalization has a subject defined.`)
 	}
 	toAddressesRaw := flagStringArray(cmd, "to")
 
@@ -66,14 +109,13 @@ func send(cmd *cobra.Command, args []string) {
 		toAddresses[i] = createAddress(toRaw)
 	}
 
-	to := toAddresses[0]
-	var plainTextContent string
-	if len(args) > 0 {
-		plainTextContent = args[0]
+	var htmlContent, plainTextContent string
+	if flagString(cmd, "html") != "" || flagString(cmd, "plain") != "" {
+		// TODO
 	} else {
-		plainTextContent = "and easy to do anywhere, even with Go"
+		htmlContent, plainTextContent = messageBodies(args)
 	}
-	htmlContent := "<strong>and easy to do anywhere, even with Go</strong>"
+
 	apiKey := flagString(cmd, "key")
 	if apiKey == "" {
 		apiKey = os.Getenv("SENDGRID_API_KEY")
@@ -82,7 +124,10 @@ func send(cmd *cobra.Command, args []string) {
 		}
 	}
 	client := sendgrid.NewSendClient(apiKey)
-	message := mail.NewSingleEmail(from, subject, to, plainTextContent, htmlContent)
+	message := mail.NewSingleEmail(from, subject, toAddresses[0], plainTextContent, htmlContent)
+	if len(toAddresses) > 1 {
+		message.Personalizations[0].AddTos(toAddresses[1:]...)
+	}
 	response, err := client.Send(message)
 	if err != nil {
 		log.Error(err)
@@ -91,6 +136,7 @@ func send(cmd *cobra.Command, args []string) {
 			log.Info("Status Code:", response.StatusCode)
 			log.Info("Response Body:", response.Body)
 			log.Info("Response Headers:")
+			log.Info("=================")
 			for k, v := range response.Headers {
 				log.Infof("%s: %v", k, v)
 			}
@@ -134,14 +180,14 @@ func init() {
 
 	RootCmd.PersistentFlags().BoolP("debug", "d", false, "Show full stack trace on error.")
 	RootCmd.PersistentFlags().BoolP("verbose", "V", false, "Show more verbose details.")
-	RootCmd.PersistentFlags().BoolP("plain", "p", false, "Print result as plain text (where applicable).")
 	RootCmd.PersistentFlags().BoolP("json", "j", false, "Print result as JSON (where applicable).")
-	RootCmd.PersistentFlags().StringP("key", "k", "", "SendGrid API Key.")
-	RootCmd.PersistentFlags().StringP("from", "f", "", "from address")
-	RootCmd.PersistentFlags().StringArrayP("to", "t", []string{}, "to address")
-	RootCmd.PersistentFlags().StringArray("cc", []string{}, "to address")
-	RootCmd.PersistentFlags().StringP("subject", "s", "", "email subject")
-	RootCmd.PersistentFlags().StringP("body", "b", "", "HTML body file name")
+	RootCmd.PersistentFlags().StringP("key", "k", "", "SendGrid API Key (can set using environment variable SENDGRID_API_KEY).")
+	RootCmd.PersistentFlags().StringP("from", "f", "sendgrid-cli@nowitworks.eu", "FROM address.")
+	RootCmd.PersistentFlags().StringArrayP("to", "t", []string{}, "TO address (can be multiple).")
+	RootCmd.PersistentFlags().StringArray("cc", []string{}, "CC address (can be multiple).")
+	RootCmd.PersistentFlags().StringP("subject", "s", "", "Email subject.")
+	RootCmd.PersistentFlags().StringP("html", "b", "", "HTML body file name.")
+	RootCmd.PersistentFlags().StringP("plain", "p", "", "Plain-text body file name.")
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -153,7 +199,7 @@ func initConfig() {
 		// Find home directory.
 		home, err := homedir.Dir()
 		if err != nil {
-			fmt.Println(err)
+			log.Error(err)
 			os.Exit(1)
 		}
 
