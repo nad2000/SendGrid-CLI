@@ -140,8 +140,13 @@ a template with a subject defined or if every personalization has a subject defi
 		} else {
 			plainTextContent, _ = html2text.FromString(htmlContent, html2text.Options{PrettyTables: true})
 		}
-	} else if templateID == "" {
+	} else if templateID == "" || len(args) > 0 {
 		htmlContent, plainTextContent = messageBodies(args)
+	} else {
+		if templateID == "" {
+			log.Fatal("Need to have at least one way of providing the message content.")
+		}
+		htmlContent = "<!-- Dummy Content -->" // A work arround to user template
 	}
 
 	apiKey := flagString(cmd, "key")
