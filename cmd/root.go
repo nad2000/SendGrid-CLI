@@ -221,12 +221,11 @@ var (
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   "sendgrid-cli",
+	Use:   "sendgrid-cli [flags] [HTML Content] [Plain text content]",
 	Short: "SendGrid CLI application",
 	Long: `SendGrig CLI application that porvides email distribution with atttachmetns, templates,
 and template parameter substitution.
-
-to quickly create a Cobra application.`,
+`,
 	Run: send,
 }
 
