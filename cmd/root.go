@@ -15,7 +15,10 @@
 package cmd
 
 import (
+	"encoding/base64"
 	"fmt"
+	"io/ioutil"
+	"mime"
 	"os"
 	"regexp"
 	"strings"
@@ -30,6 +33,16 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
+
+// read into a string whole content of a file
+func readFile(filename string) string {
+	b, err := ioutil.ReadFile(filename)
+	if err != nil {
+		log.Errorf("Failed to read the file %q", filename)
+		log.Fatal(err)
+	}
+	return string(b)
+}
 
 // Creates email address structure form the given value in differnt formats:
 // "Full Name <name@domain.name>" OR "name@domain.name"
@@ -96,8 +109,8 @@ func send(cmd *cobra.Command, args []string) {
 	from := createAddress(flagString(cmd, "from"))
 	subject := flagString(cmd, "subject")
 	if subject == "" {
-		log.Fatal(`The subject is required. You can get around this requirement if you use a template with a subject defined or 
-if every personalization has a subject defined.`)
+		log.Fatal(`The subject is required. You can get around this requirement if you use 
+a template with a subject defined or if every personalization has a subject defined.`)
 	}
 	toAddressesRaw := flagStringArray(cmd, "to")
 
@@ -109,9 +122,23 @@ if every personalization has a subject defined.`)
 		toAddresses[i] = createAddress(toRaw)
 	}
 
+	ccAddressesRaw := flagStringArray(cmd, "cc")
+	ccAddresses := make([]*mail.Email, len(ccAddressesRaw))
+	for i, toRaw := range toAddressesRaw {
+		toAddresses[i] = createAddress(toRaw)
+	}
+
 	var htmlContent, plainTextContent string
-	if flagString(cmd, "html") != "" || flagString(cmd, "plain") != "" {
-		// TODO
+	htmlFilename, plainTextFilename := flagString(cmd, "html"), flagString(cmd, "plain")
+	if htmlFilename != "" || plainTextFilename != "" {
+		if htmlFilename != "" {
+			htmlContent = readFile(htmlFilename)
+		}
+		if plainTextFilename != "" {
+			plainTextContent = readFile(plainTextFilename)
+		} else {
+			plainTextContent, _ = html2text.FromString(htmlContent, html2text.Options{PrettyTables: true})
+		}
 	} else {
 		htmlContent, plainTextContent = messageBodies(args)
 	}
@@ -128,8 +155,30 @@ if every personalization has a subject defined.`)
 	if len(toAddresses) > 1 {
 		message.Personalizations[0].AddTos(toAddresses[1:]...)
 	}
+	if len(ccAddresses) > 0 {
+		message.Personalizations[0].AddCCs(ccAddresses...)
+	}
+
+	for _, attFilename := range flagStringArray(cmd, "att") {
+		b, err := ioutil.ReadFile(attFilename)
+		if err != nil {
+			log.Errorf("Failed to read the attachment %q", attFilename)
+			log.Fatal(err)
+		}
+		a := mail.NewAttachment()
+		a.SetType(mime.TypeByExtension(attFilename))
+		a.SetDisposition("attachment")
+		a.SetFilename(attFilename)
+		a.SetContent(base64.StdEncoding.EncodeToString(b))
+		message.AddAttachment(a)
+		if debug {
+			log.Debugf("Adding the atttachmetn %q", attFilename)
+		}
+	}
+
 	response, err := client.Send(message)
 	if err != nil {
+		log.Error("Failed to send the message.")
 		log.Error(err)
 	} else {
 		if verbose || debug {
@@ -176,15 +225,18 @@ func init() {
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
-	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.sendgrid-cli.yaml)")
+	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "",
+		"config file (default is $HOME/.sendgrid-cli.yaml)")
 
 	RootCmd.PersistentFlags().BoolP("debug", "d", false, "Show full stack trace on error.")
 	RootCmd.PersistentFlags().BoolP("verbose", "V", false, "Show more verbose details.")
 	RootCmd.PersistentFlags().BoolP("json", "j", false, "Print result as JSON (where applicable).")
-	RootCmd.PersistentFlags().StringP("key", "k", "", "SendGrid API Key (can set using environment variable SENDGRID_API_KEY).")
+	RootCmd.PersistentFlags().StringP("key", "k", "",
+		"SendGrid API Key (can set using environment variable SENDGRID_API_KEY).")
 	RootCmd.PersistentFlags().StringP("from", "f", "sendgrid-cli@nowitworks.eu", "FROM address.")
 	RootCmd.PersistentFlags().StringArrayP("to", "t", []string{}, "TO address (can be multiple).")
 	RootCmd.PersistentFlags().StringArray("cc", []string{}, "CC address (can be multiple).")
+	RootCmd.PersistentFlags().StringArrayP("att", "a", []string{}, "Attachment (can be multiple).")
 	RootCmd.PersistentFlags().StringP("subject", "s", "", "Email subject.")
 	RootCmd.PersistentFlags().StringP("html", "b", "", "HTML body file name.")
 	RootCmd.PersistentFlags().StringP("plain", "p", "", "Plain-text body file name.")
