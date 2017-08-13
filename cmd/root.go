@@ -128,8 +128,9 @@ a template with a subject defined or if every personalization has a subject defi
 		toAddresses[i] = createAddress(toRaw)
 	}
 
-	var htmlContent, plainTextContent string
+	var htmlContent, plainTextContent, templateID string
 	htmlFilename, plainTextFilename := flagString(cmd, "html"), flagString(cmd, "plain")
+	templateID = flagString(cmd, "template-id")
 	if htmlFilename != "" || plainTextFilename != "" {
 		if htmlFilename != "" {
 			htmlContent = readFile(htmlFilename)
@@ -139,7 +140,7 @@ a template with a subject defined or if every personalization has a subject defi
 		} else {
 			plainTextContent, _ = html2text.FromString(htmlContent, html2text.Options{PrettyTables: true})
 		}
-	} else {
+	} else if templateID == "" {
 		htmlContent, plainTextContent = messageBodies(args)
 	}
 
@@ -173,6 +174,20 @@ a template with a subject defined or if every personalization has a subject defi
 		message.AddAttachment(a)
 		if debug {
 			log.Debugf("Adding the atttachmetn %q", attFilename)
+		}
+	}
+
+	if templateID != "" {
+		message.SetTemplateID(templateID)
+		for _, sub := range flagStringArray(cmd, "sub") {
+			parts := strings.SplitN(sub, "=", 2)
+			if len(parts) != 2 {
+				log.Fatalf("Incorrect substitution: %s", flagStringArray(cmd, "sub"))
+			}
+			if debug {
+				log.Debugf("Added substitution %q with the value %q", parts[0], parts[1])
+			}
+			message.Personalizations[0].SetSubstitution("[%"+parts[0]+"%]", parts[1])
 		}
 	}
 
@@ -240,6 +255,9 @@ func init() {
 	RootCmd.PersistentFlags().StringP("subject", "s", "", "Email subject.")
 	RootCmd.PersistentFlags().StringP("html", "b", "", "HTML body file name.")
 	RootCmd.PersistentFlags().StringP("plain", "p", "", "Plain-text body file name.")
+	RootCmd.PersistentFlags().StringP("template-id", "T", "", "Sendgrid template ID.")
+	RootCmd.PersistentFlags().StringArrayP("sub", "S", nil,
+		"Template paramter substitution, eg, --sub ':name=Jhon Doe'")
 }
 
 // initConfig reads in config file and ENV variables if set.
