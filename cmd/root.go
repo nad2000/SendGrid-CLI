@@ -15,10 +15,12 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 
@@ -35,6 +37,12 @@ import (
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+)
+
+var (
+	cfgFile string
+	debug   bool
+	verbose bool
 )
 
 // read into a string whole content of a file
@@ -225,59 +233,124 @@ a template with a subject defined or if every personalization has a subject defi
 	}
 }
 
+func newMultipPartForm(urlStr string, values url.Values, filenames []string) (*http.Request, error) {
+
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+
+	for _, fn := range filenames {
+		file, err := os.Open(fn)
+		defer file.Close()
+
+		if err != nil {
+			return nil, err
+		}
+		fileContents, err := ioutil.ReadAll(file)
+		if err != nil {
+			return nil, err
+		}
+		fi, err := file.Stat()
+		if err != nil {
+			return nil, err
+		}
+		part, err := writer.CreateFormFile(fn, fi.Name())
+		if err != nil {
+			return nil, err
+		}
+		part.Write(fileContents)
+	}
+
+	for key, vals := range values {
+		if len(vals) == 1 {
+			_ = writer.WriteField(key, vals[0])
+		} else {
+			for _, v := range vals {
+				_ = writer.WriteField(key+"[]", v)
+			}
+		}
+	}
+
+	err := writer.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return http.NewRequest("POST", urlStr, body)
+}
+
+func addressToLists(emails []*mail.Email) ([]string, []string) {
+	addresses := make([]string, len(emails))
+	addressNames := make([]string, len(emails))
+	for i, e := range emails {
+		addresses[i] = e.Address
+		addressNames[i] = e.Name
+	}
+	return addresses, addressNames
+}
+
 func sendV2(username, password string, m *mail.SGMailV3) {
-	form := url.Values{
+
+	values := url.Values{
 		"api_user": {username},
 		"api_key":  {password},
 		"subject":  {m.Subject},
 		"from":     {m.From.Address},
 		"fromname": {m.From.Name},
 	}
-	to := m.Personalizations[0].To
-	if len(to) == 1 {
-		form.Add("to", to[0].Address)
-		form.Add("toname", to[0].Name)
-	} else {
-		for _, a := range to {
-			form.Add("to[]", a.Address)
-			form.Add("toname[]", a.Name)
-		}
-	}
+	values["to"], values["toname"] = addressToLists(m.Personalizations[0].To)
 	cc := m.Personalizations[0].CC
-	for _, a := range cc {
-		form.Add("cc[]", a.Address)
-		form.Add("ccname[]", a.Name)
+	if len(cc) > 0 {
+		values["cc"], values["ccname"] = addressToLists(cc)
 	}
 	for _, c := range m.Content {
 		if c.Type == "text/html" && c.Value != "" {
-			form.Add("html", c.Value)
+			values.Add("html", c.Value)
 		}
 		if c.Type == "text/plain" && c.Value != "" {
-			form.Add("text", c.Value)
+			values.Add("text", c.Value)
 		}
 	}
-	for _, a := range m.Attachments {
-		form.Add("files["+a.Name+"]; filename="+a.Filename+" ;type="+a.Type, a.Content)
-	}
 
-	resp, err := http.PostForm("https://api.sendgrid.com/api/mail.send.json", form)
+	filenames := make([]string, len(m.Attachments))
+	for i, a := range m.Attachments {
+		filenames[i] = a.Filename
+	}
+	// for _, a := range m.Attachments {
+	// 	values["files["+a.Name+"]; filename="+a.Filename+" ;type="+a.Type, a.Content)
+	// }
+
+	request, err := newMultipPartForm("https://api.sendgrid.com/api/mail.send.json", values, filenames)
 	if err != nil {
-		log.Error("Failed to sened email.")
+		log.Error("Failed to create the API request.")
 		log.Fatal(err)
 	}
 
-	if debug || verbose {
-		defer resp.Body.Close()
-		body, _ := ioutil.ReadAll(resp.Body)
-		log.Debug(string(body))
+	// if debug {
+	// 	defer request.Body.Close()
+	// 	body, _ := ioutil.ReadAll(request.Body)
+	// 	log.Debug(string(body))
+	// }
+
+	client := &http.Client{}
+	resp, err := client.Do(request)
+	if err != nil {
+		log.Error("Failed to send the email.")
+		log.Fatal(err)
+	} else {
+		var bodyContent []byte
+		log.Infof("Status Code: %d", resp.StatusCode)
+		if debug {
+			log.Info("Headers:")
+			log.Info("========")
+			for k, v := range resp.Header {
+				log.Infof("%s:\t%v", k, v)
+			}
+			resp.Body.Read(bodyContent)
+			resp.Body.Close()
+			log.Info(bodyContent)
+		}
 	}
 }
-
-var (
-	cfgFile string
-	debug   bool
-	verbose bool
-)
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
