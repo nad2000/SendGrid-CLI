@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"mime"
+	"net/http"
 	"os"
 	"regexp"
 	"strings"
@@ -176,7 +177,7 @@ a template with a subject defined or if every personalization has a subject defi
 		a.SetDisposition("attachment")
 		a.SetFilename(attFilename)
 		a.SetContent(base64.StdEncoding.EncodeToString(b))
-		message.AddAttachment(a)
+		attachments = append(attachments, a)
 		if debug {
 			log.Debugf("Adding the atttachmetn %q", attFilename)
 		}
@@ -213,6 +214,53 @@ a template with a subject defined or if every personalization has a subject defi
 	}
 }
 
+func sendV2(username, password string, m *mail.SGMailV3) {
+	// from *mail.Email, to, cc []*mail.Email, subject, htmlContent, plainTextContent string,
+	// attachments []*mail.Attachment)  {
+	url := "https://api.sendgrid.com/v3/mail/send"
+	form := url.Values{
+		"api_user": {username},
+		"api_key": {password},
+		"subject": {m.Subject},
+		"from": {m.From.Address},
+		"fromname": { m.From.Name}
+	}
+	to := m.Personalizations[0].To
+	if len(to) == 1 {
+		form.Add("to", to[0].Address)
+		form.Add("toname", to[0].Name)
+	} else {
+		for _, a := range to {
+			form.Add("to[]", a.Address)
+			form.Add("toname[]", a.Name)
+		}
+	}
+	cc := m.Personalizations[0].CC
+	for _, a := range cc {
+		form.Add("cc[]", a.Address)
+		form.Add("ccname[]", a.Name)
+	}
+	plainText := NewContent("text/plain", plainTextContent)
+	html := NewContent("text/html", htmlContent)
+	for _, c := range m.Content {
+		if c.Type == "text/html" && c.Value != "" {
+			form.Add("html", c.Value)
+		}
+		if c.Type == "text/plain" && c.Value != "" {
+			form.Add("text", c.Value)
+		}
+	}
+	for _, a := range atttachmetns {
+		form.Add("files["+a.Name+"]; filename="+a.Name+" ;type="+a.Type, a.Value)
+	}
+	
+	resp, err := http.PostForm("http://example.com/form",
+	url.Values{"key": {"Value"}, "id": {"123"}})
+
+	defer res.Body.Close()
+	body, _ := ioutil.ReadAll(res.Body)
+}
+
 var (
 	cfgFile string
 	debug   bool
@@ -225,6 +273,18 @@ var RootCmd = &cobra.Command{
 	Short: "SendGrid CLI application",
 	Long: `SendGrig CLI application that porvides email distribution with atttachmetns, templates,
 and template parameter substitution.
+
+The content of the email can be specified either using position parameters or option --html / --plain, eg, 
+
+sendgrid-cli -k API-KEY -t recepient@domain.net -f sender@foo.bar -s "The subject" "Dear recepien, <br/><p>..."
+
+in this case the HTML content will get converted into the plain text version and added to the message.
+
+
+sendgrid-cli -k API-KEY -t recepient@domain.net -f sender@foo.bar -s "The subject" -b FILENAME.html
+sendgrid-cli -k API-KEY -t recepient@domain.net -f sender@foo.bar -s "The subject" -T TEMPLATE-ID -S "name=John Doe" -S "price=$42"
+
+Instead of -k API-KEY you can user --user/-U with --password/-P.
 `,
 	Run: send,
 }
@@ -252,6 +312,8 @@ func init() {
 	RootCmd.PersistentFlags().BoolP("json", "j", false, "Print result as JSON (where applicable).")
 	RootCmd.PersistentFlags().StringP("key", "k", "",
 		"SendGrid API Key (can set using environment variable SENDGRID_API_KEY).")
+	RootCmd.PersistentFlags().StringP("user", "U", "", "Sendgrid user name.")
+	RootCmd.PersistentFlags().StringP("password", "P", "", "Sendgrid user password.")
 	RootCmd.PersistentFlags().StringP("from", "f", "sendgrid-cli@nowitworks.eu", "FROM address.")
 	RootCmd.PersistentFlags().StringArrayP("to", "t", []string{}, "TO address (can be multiple).")
 	RootCmd.PersistentFlags().StringArray("cc", []string{}, "CC address (can be multiple).")
