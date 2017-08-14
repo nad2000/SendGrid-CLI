@@ -20,6 +20,8 @@ import (
 	"io/ioutil"
 	"mime"
 	"net/http"
+	"net/url"
+
 	"os"
 	"regexp"
 	"strings"
@@ -151,10 +153,15 @@ a template with a subject defined or if every personalization has a subject defi
 	}
 
 	apiKey := flagString(cmd, "key")
-	if apiKey == "" {
+	username := flagString(cmd, "user")
+	password := flagString(cmd, "password")
+
+	if apiKey == "" && username == "" {
 		apiKey = os.Getenv("SENDGRID_API_KEY")
 		if apiKey == "" {
-			log.Fatal("SendGrid API Key is missing...")
+			log.Info("Missing username. Please use --user and --password options.")
+			log.Info("Missing Sendgrid API key. Use --key option.")
+			log.Fatal("Ether Sandgrid API Key or username and password should be present.")
 		}
 	}
 	client := sendgrid.NewSendClient(apiKey)
@@ -177,7 +184,7 @@ a template with a subject defined or if every personalization has a subject defi
 		a.SetDisposition("attachment")
 		a.SetFilename(attFilename)
 		a.SetContent(base64.StdEncoding.EncodeToString(b))
-		attachments = append(attachments, a)
+		message.AddAttachment(a)
 		if debug {
 			log.Debugf("Adding the atttachmetn %q", attFilename)
 		}
@@ -197,6 +204,10 @@ a template with a subject defined or if every personalization has a subject defi
 		}
 	}
 
+	if apiKey == "" {
+		sendV2(username, password, message)
+		return
+	}
 	response, err := client.Send(message)
 	if err != nil {
 		log.Error("Failed to send the message.")
@@ -215,15 +226,12 @@ a template with a subject defined or if every personalization has a subject defi
 }
 
 func sendV2(username, password string, m *mail.SGMailV3) {
-	// from *mail.Email, to, cc []*mail.Email, subject, htmlContent, plainTextContent string,
-	// attachments []*mail.Attachment)  {
-	url := "https://api.sendgrid.com/v3/mail/send"
 	form := url.Values{
 		"api_user": {username},
-		"api_key": {password},
-		"subject": {m.Subject},
-		"from": {m.From.Address},
-		"fromname": { m.From.Name}
+		"api_key":  {password},
+		"subject":  {m.Subject},
+		"from":     {m.From.Address},
+		"fromname": {m.From.Name},
 	}
 	to := m.Personalizations[0].To
 	if len(to) == 1 {
@@ -240,8 +248,6 @@ func sendV2(username, password string, m *mail.SGMailV3) {
 		form.Add("cc[]", a.Address)
 		form.Add("ccname[]", a.Name)
 	}
-	plainText := NewContent("text/plain", plainTextContent)
-	html := NewContent("text/html", htmlContent)
 	for _, c := range m.Content {
 		if c.Type == "text/html" && c.Value != "" {
 			form.Add("html", c.Value)
@@ -250,15 +256,21 @@ func sendV2(username, password string, m *mail.SGMailV3) {
 			form.Add("text", c.Value)
 		}
 	}
-	for _, a := range atttachmetns {
-		form.Add("files["+a.Name+"]; filename="+a.Name+" ;type="+a.Type, a.Value)
+	for _, a := range m.Attachments {
+		form.Add("files["+a.Name+"]; filename="+a.Filename+" ;type="+a.Type, a.Content)
 	}
-	
-	resp, err := http.PostForm("http://example.com/form",
-	url.Values{"key": {"Value"}, "id": {"123"}})
 
-	defer res.Body.Close()
-	body, _ := ioutil.ReadAll(res.Body)
+	resp, err := http.PostForm("https://api.sendgrid.com/api/mail.send.json", form)
+	if err != nil {
+		log.Error("Failed to sened email.")
+		log.Fatal(err)
+	}
+
+	if debug || verbose {
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+		log.Debug(string(body))
+	}
 }
 
 var (
