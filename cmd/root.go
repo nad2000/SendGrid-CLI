@@ -123,21 +123,14 @@ func send(cmd *cobra.Command, args []string) {
 		log.Fatal(`The subject is required. You can get around this requirement if you use 
 a template with a subject defined or if every personalization has a subject defined.`)
 	}
-	toAddressesRaw := flagStringArray(cmd, "to")
+	tos := flagStringArray(cmd, "to")
 
 	if len(toAddressesRaw) == 0 {
-		log.Fatal("At lease one recepient should be present. Please -t or --to flag to specify a recepient.")
-	}
-	toAddresses := make([]*mail.Email, len(toAddressesRaw))
-	for i, toRaw := range toAddressesRaw {
-		toAddresses[i] = createAddress(toRaw)
+		log.Fatal(
+			"At lease one recepient should be present. Please -t or --to flag to specify a recepient.")
 	}
 
-	ccAddressesRaw := flagStringArray(cmd, "cc")
-	ccAddresses := make([]*mail.Email, len(ccAddressesRaw))
-	for i, toRaw := range toAddressesRaw {
-		toAddresses[i] = createAddress(toRaw)
-	}
+	ccs := flagStringArray(cmd, "cc")
 
 	var htmlContent, plainTextContent, templateID string
 	htmlFilename, plainTextFilename := flagString(cmd, "html"), flagString(cmd, "plain")
@@ -172,6 +165,37 @@ a template with a subject defined or if every personalization has a subject defi
 			log.Fatal("Ether Sandgrid API Key or username and password should be present.")
 		}
 	}
+
+	attFilenames := flagStringArray(cmd, "att")
+
+	if apiKey == "" {
+		sendV3(apiKey, from, tos, ccs, subject, htmlContent, plainTextContent, templateID, attFilenames)
+	} else {
+		sendV3(username, password, from, tos, ccs, subject, htmlContent, plainTextContent, attFilenames)
+	}
+}
+
+// Command execution
+func sendV3(username, password, from string, tos, ccs []string,
+	subject, htmlContent, plainTextContent, templateID string,
+	attFilenames []string) {
+}
+
+// Command execution
+func sendV3(apiKey, from string, tos, ccs []string,
+	subject, htmlContent, plainTextContent, templateID string,
+	attFilenames []string) {
+
+	toAddresses := make([]*mail.Email, len(tos))
+	for i, toRaw := range tos {
+		toAddresses[i] = createAddress(toRaw)
+	}
+
+	ccAddresses := make([]*mail.Email, len(ccs))
+	for i, ccRaw := range ccs {
+		ccAddresses[i] = createAddress(ccRaw)
+	}
+
 	client := sendgrid.NewSendClient(apiKey)
 	message := mail.NewSingleEmail(from, subject, toAddresses[0], plainTextContent, htmlContent)
 	if len(toAddresses) > 1 {
@@ -181,7 +205,7 @@ a template with a subject defined or if every personalization has a subject defi
 		message.Personalizations[0].AddCCs(ccAddresses...)
 	}
 
-	for _, attFilename := range flagStringArray(cmd, "att") {
+	for _, attFilename := range attFilenames {
 		b, err := ioutil.ReadFile(attFilename)
 		if err != nil {
 			log.Errorf("Failed to read the attachment %q", attFilename)
@@ -288,7 +312,7 @@ func addressToLists(emails []*mail.Email) ([]string, []string) {
 	return addresses, addressNames
 }
 
-func sendV2(username, password string, m *mail.SGMailV3) {
+func _sendV2(username, password string, m *mail.SGMailV3) {
 
 	values := url.Values{
 		"api_user": {username},
