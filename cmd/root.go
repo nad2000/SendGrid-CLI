@@ -26,6 +26,7 @@ import (
 
 	"os"
 	"regexp"
+	"sendgrd-cli/sendgrid"
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
@@ -117,15 +118,14 @@ func send(cmd *cobra.Command, args []string) {
 		log.Fatalf("Too many positional argumets: %v", args)
 	}
 
-	from := createAddress(flagString(cmd, "from"))
+	from := flagString(cmd, "from")
 	subject := flagString(cmd, "subject")
 	if subject == "" {
 		log.Fatal(`The subject is required. You can get around this requirement if you use 
 a template with a subject defined or if every personalization has a subject defined.`)
 	}
 	tos := flagStringArray(cmd, "to")
-
-	if len(toAddressesRaw) == 0 {
+	if len(tos) == 0 {
 		log.Fatal(
 			"At lease one recepient should be present. Please -t or --to flag to specify a recepient.")
 	}
@@ -152,6 +152,12 @@ a template with a subject defined or if every personalization has a subject defi
 		}
 		htmlContent = "<!-- Dummy Content -->" // A work arround to user template
 	}
+	if debug {
+		if htmlFilename == "" && plainTextFilename == "" {
+			log.Infof("HTML Content: %s", htmlContent)
+			log.Infof("Plain Text Content: %s", plainTextContent)
+		}
+	}
 
 	apiKey := flagString(cmd, "key")
 	username := flagString(cmd, "user")
@@ -166,25 +172,45 @@ a template with a subject defined or if every personalization has a subject defi
 		}
 	}
 
+	subs := flagStringArray(cmd, "sub")
 	attFilenames := flagStringArray(cmd, "att")
 
 	if apiKey == "" {
-		sendV3(apiKey, from, tos, ccs, subject, htmlContent, plainTextContent, templateID, attFilenames)
+		sendV2(username, password, from, tos, ccs, subject, htmlContent, plainTextContent, attFilenames)
 	} else {
-		sendV3(username, password, from, tos, ccs, subject, htmlContent, plainTextContent, attFilenames)
+		sendV3(apiKey, from, tos, ccs, subject, htmlContent, plainTextContent, templateID, subs, attFilenames)
 	}
 }
 
-// Command execution
-func sendV3(username, password, from string, tos, ccs []string,
-	subject, htmlContent, plainTextContent, templateID string,
-	attFilenames []string) {
+func sendV2(username, password, from string, tos, ccs []string,
+	subject, htmlContent, plainTextContent string, attFilenames []string) {
+	sg := sendgridV2.NewSendGridClient(username, password)
+	m := sendgridV2.NewMail()
+	m.AddTos(tos)
+	m.AddCcs(ccs)
+	m.AddSubject(subject)
+	if plainTextContent != "" {
+		m.AddText(plainTextContent)
+	}
+	if htmlContent != "" {
+		m.SetHTML(htmlContent)
+	}
+	m.AddFrom(from)
+	if r := sg.Send(m); r == nil {
+		log.Info("Email sent!")
+	} else {
+		log.Error(r)
+	}
 }
 
-// Command execution
 func sendV3(apiKey, from string, tos, ccs []string,
-	subject, htmlContent, plainTextContent, templateID string,
+	subject, htmlContent, plainTextContent, templateID string, subs []string,
 	attFilenames []string) {
+
+	if debug {
+		log.Infof("HTML Content: %s", htmlContent)
+		log.Infof("Plain Text Content: %s", plainTextContent)
+	}
 
 	toAddresses := make([]*mail.Email, len(tos))
 	for i, toRaw := range tos {
@@ -197,7 +223,11 @@ func sendV3(apiKey, from string, tos, ccs []string,
 	}
 
 	client := sendgrid.NewSendClient(apiKey)
-	message := mail.NewSingleEmail(from, subject, toAddresses[0], plainTextContent, htmlContent)
+	if htmlContent == "" {
+		htmlContent = "<pre>" + plainTextContent + "</pre>"
+	}
+	message := mail.NewSingleEmail(
+		createAddress(from), subject, toAddresses[0], plainTextContent, htmlContent)
 	if len(toAddresses) > 1 {
 		message.Personalizations[0].AddTos(toAddresses[1:]...)
 	}
@@ -224,10 +254,10 @@ func sendV3(apiKey, from string, tos, ccs []string,
 
 	if templateID != "" {
 		message.SetTemplateID(templateID)
-		for _, sub := range flagStringArray(cmd, "sub") {
+		for _, sub := range subs {
 			parts := strings.SplitN(sub, "=", 2)
 			if len(parts) != 2 {
-				log.Fatalf("Incorrect substitution: %s", flagStringArray(cmd, "sub"))
+				log.Fatalf("Incorrect substitution: %s", subs)
 			}
 			if debug {
 				log.Debugf("Added substitution %q with the value %q", parts[0], parts[1])
@@ -236,10 +266,6 @@ func sendV3(apiKey, from string, tos, ccs []string,
 		}
 	}
 
-	if apiKey == "" {
-		sendV2(username, password, message)
-		return
-	}
 	response, err := client.Send(message)
 	if err != nil {
 		log.Error("Failed to send the message.")
