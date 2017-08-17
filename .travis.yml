@@ -1,6 +1,6 @@
 language: go
 go:
-  - '1.3'
+  - '1.4'
   - tip
 
 install:
@@ -12,6 +12,5 @@ install:
 
 script:
   - go build -v ./...
-  - go install
-  - sendgrid-cli -d  -U $SENDGRID_USER -P $SENDGRID_PASSWORD -s TEST_v2 -t E$RANDOM@mailinator.com -a attachment.jpg "<strong>TEST MESSAGE</strong>"
-  - sendgrid-cli -d  -k $SENDGRID_API_KEY -s "TEST v3" -t E$RANDOM@mailinator.com -a attachment.jpg "<strong>TEST MESSAGE</strong>"
+  - ./sendgrid-cli -d  -U $SENDGRID_USER -P $SENDGRID_PASSWORD -s TEST_v2 -t E$RANDOM@mailinator.com -a attachment.jpg "<strong>TEST MESSAGE</strong>"
+  - ./sendgrid-cli -d  -k $SENDGRID_API_KEY -s "TEST v3" -t E$RANDOM@mailinator.com -a attachment.jpg "<strong>TEST MESSAGE</strong>"
