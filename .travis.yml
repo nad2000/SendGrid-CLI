@@ -5,7 +5,7 @@ go:
 
 install:
   - ln -s $PWD/../sendgrid-cli $GOPATH/src
-  - ls -al
+  - ls -al $GOPATH/src
   - go get -d ./...
 
 script:
