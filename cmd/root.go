@@ -26,8 +26,9 @@ import (
 
 	"os"
 	"regexp"
-	v2 "sendgrid-cli/sendgrid"
 	"strings"
+
+	v2 "./sendgrid"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/jaytaylor/html2text"
