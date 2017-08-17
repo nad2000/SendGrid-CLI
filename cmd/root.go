@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
@@ -23,6 +24,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"time"
 
 	"os"
 	"regexp"
@@ -186,6 +188,10 @@ a template with a subject defined or if every personalization has a subject defi
 func sendV2(username, password, from string, tos, ccs []string,
 	subject, htmlContent, plainTextContent string, attFilenames []string) {
 	sg := v2.NewSendGridClient(username, password)
+	sg.Client = &http.Client{
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+		Timeout:   5 * time.Second,
+	}
 	m := v2.NewMail()
 	m.AddTos(tos)
 	m.AddCcs(ccs)
