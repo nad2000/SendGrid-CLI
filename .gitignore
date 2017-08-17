@@ -51,3 +51,5 @@ tags
 .glide/
 
 .DS_Store
+sendgrid-cli
+sendgrid-cli.exe
