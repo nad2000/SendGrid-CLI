@@ -4,7 +4,7 @@ go:
   - tip
 
 install:
-  - ln -s $PWD/../sendgrid-cli $GOPATH/src
+  - ln -s $PWD $GOPATH/src/sendgrid-cli
   - ls -al $GOPATH/src
   - pwd
   - ls -al
