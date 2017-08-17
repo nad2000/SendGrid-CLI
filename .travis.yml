@@ -5,10 +5,10 @@ go:
 
 install:
   - ln -s $PWD $GOPATH/src
+  - ls -al
   - go get -d ./...
 
 script:
-  - ls -al
   - go build -v ./...
   - go install
   - sendgrid-cli -d  -U $SENDGRID_USER -P $SENDGRID_PASSWORD -s TEST_v2 -t E$RANDOM@mailinator.com -a attachment.jpg "<strong>TEST MESSAGE</strong>"
