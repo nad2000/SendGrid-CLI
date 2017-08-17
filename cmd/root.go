@@ -26,7 +26,7 @@ import (
 
 	"os"
 	"regexp"
-	"sendgrd-cli/sendgrid"
+	v2 "sendgrid-cli/sendgrid"
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
@@ -184,18 +184,27 @@ a template with a subject defined or if every personalization has a subject defi
 
 func sendV2(username, password, from string, tos, ccs []string,
 	subject, htmlContent, plainTextContent string, attFilenames []string) {
-	sg := sendgridV2.NewSendGridClient(username, password)
-	m := sendgridV2.NewMail()
+	sg := v2.NewSendGridClient(username, password)
+	m := v2.NewMail()
 	m.AddTos(tos)
 	m.AddCcs(ccs)
-	m.AddSubject(subject)
+	m.SetSubject(subject)
 	if plainTextContent != "" {
-		m.AddText(plainTextContent)
+		m.SetText(plainTextContent)
 	}
 	if htmlContent != "" {
 		m.SetHTML(htmlContent)
 	}
-	m.AddFrom(from)
+	m.SetFrom(from)
+	for _, af := range attFilenames {
+		f, err := os.Open(af)
+		if err != nil {
+			log.Errorf("Failed to open attachment file %q", af)
+			log.Fatal(err)
+		}
+		defer f.Close()
+		m.AddAttachment(af, f)
+	}
 	if r := sg.Send(m); r == nil {
 		log.Info("Email sent!")
 	} else {
