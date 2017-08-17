@@ -4,11 +4,11 @@ go:
   - tip
 
 install:
-  - export GOPATH=$PWD
+  - ln -s $PWD $GOPATH/src
   - go get -d ./...
 
 script:
-  - export GOPATH=$PWD
+  - ls -al
   - go build -v ./...
   - go install
   - sendgrid-cli -d  -U $SENDGRID_USER -P $SENDGRID_PASSWORD -s TEST_v2 -t E$RANDOM@mailinator.com -a attachment.jpg "<strong>TEST MESSAGE</strong>"
