@@ -9,5 +9,7 @@ install:
 
 script:
   - go build -o sendgrid-cli
-  - ./sendgrid-cli -d  -U $SENDGRID_USER -P $SENDGRID_PASSWORD -s TEST_v2 -t E$RANDOM@mailinator.com -a attachment.jpg "<strong>TEST MESSAGE</strong>"
+  - ./sendgrid-cli -d  -U $SENDGRID_USER -P $SENDGRID_PASSWORD -s "TEST v2" -t E$RANDOM@mailinator.com -a attachment.jpg "<strong>TEST MESSAGE</strong>"
   - ./sendgrid-cli -d  -k $SENDGRID_API_KEY -s "TEST v3" -t E$RANDOM@mailinator.com -a attachment.jpg "<strong>TEST MESSAGE</strong>"
+  - ./sendgrid-cli -d  -U $SENDGRID_USER -P $SENDGRID_PASSWORD -s "TEST v2" -t E$RANDOM@mailinator.com -a attachment.jpg -b test.html
+  - ./sendgrid-cli -d  -k $SENDGRID_API_KEY -s "TEST v3" -t E$RANDOM@mailinator.com -a attachment.jpg -b test.html
