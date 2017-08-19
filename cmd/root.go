@@ -35,6 +35,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/jaytaylor/html2text"
 
+	"github.com/sendgrid/rest"
 	"github.com/sendgrid/sendgrid-go"
 	"github.com/sendgrid/sendgrid-go/helpers/mail"
 
@@ -156,10 +157,8 @@ a template with a subject defined or if every personalization has a subject defi
 		htmlContent = "<!-- Dummy Content -->" // A work arround to user template
 	}
 	if debug {
-		if htmlFilename == "" && plainTextFilename == "" {
-			log.Infof("HTML Content: %s", htmlContent)
-			log.Infof("Plain Text Content: %s", plainTextContent)
-		}
+		log.Infof("HTML Content:\n=============\n%s", htmlContent)
+		log.Infof("Plain Text Content:\n===================\n%s", plainTextContent)
 	}
 
 	apiKey := flagString(cmd, "key")
@@ -238,7 +237,6 @@ func sendV3(apiKey, from string, tos, ccs []string,
 		ccAddresses[i] = createAddress(ccRaw)
 	}
 
-	client := sendgrid.NewSendClient(apiKey)
 	if htmlContent == "" {
 		htmlContent = "<pre>" + plainTextContent + "</pre>"
 	}
@@ -282,6 +280,9 @@ func sendV3(apiKey, from string, tos, ccs []string,
 		}
 	}
 
+	rest.DefaultClient.HTTPClient.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	client := sendgrid.NewSendClient(apiKey)
 	response, err := client.Send(message)
 	if err != nil {
 		log.Error("Failed to send the message.")
